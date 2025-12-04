@@ -1,7 +1,7 @@
 import socket
 import ssl
 
-class BroswerClient:
+class Client:
 
     def __init__(self, url):
         self.scheme, url = url.split("://", 1)
@@ -77,10 +77,11 @@ class BroswerClient:
         return content
     
 
-    def show(self, body):
+    def lex(self, body):
         """
         Method to print text content inside tags
         """
+        text = ""
         in_tag = False
         for c in body:
 
@@ -91,6 +92,8 @@ class BroswerClient:
                 in_tag = False
 
             elif not in_tag:
-                print(c, end="")
+                text += c
+
+        return text
 
 

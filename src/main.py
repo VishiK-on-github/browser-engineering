@@ -1,11 +1,12 @@
-from browser_client import BroswerClient
+import tkinter
 
-def load(url):
-    client = BroswerClient(url)
-    body = client.request()
-    client.show(body)
-
+from browser import Browser
 
 if __name__ == "__main__":
     import sys
-    load(sys.argv[1])
+
+    browser = Browser(sys.argv[1])
+    browser.load()
+
+    # event loop to keep the window alive and listen to events
+    tkinter.mainloop()
