@@ -1,6 +1,9 @@
 import socket
 import ssl
 
+from text import Text
+from tag import Tag
+
 class Client:
 
     def __init__(self, url):
@@ -77,23 +80,31 @@ class Client:
         return content
     
 
-    def lex(self, body):
-        """
-        Method to print text content inside tags
-        """
-        text = ""
-        in_tag = False
-        for c in body:
+def lex(body):
+    """
+    Method to print text content inside tags
+    """
+    out = []
+    buffer = ""
+    in_tag = False
+    for c in body:
 
-            if c == "<":
-                in_tag = True
+        if c == "<":
+            in_tag = True
+            if buffer: out.append(Text(buffer))
+            buffer = ""
 
-            elif c == ">":
-                in_tag = False
+        elif c == ">":
+            in_tag = False
+            out.append(Tag(buffer))
+            buffer = ""
 
-            elif not in_tag:
-                text += c
+        else:
+            buffer += c
 
-        return text
+    if not in_tag and buffer:
+        out.append(Text(buffer))
+
+    return out
 
 
