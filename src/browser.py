@@ -1,7 +1,9 @@
 import tkinter
 
-from client import Client, lex
+# from client import Client, lex
+from client import Client
 from layout import Layout
+from parser import HTMLParser, print_tree
 
 WIDTH = 800
 HEIGHT = 600
@@ -59,13 +61,12 @@ class Browser:
             self.canvas.create_text(x, y - self.scroll, text=c, font=f, anchor="nw")
 
 
-
     def load(self):
         """
         render servers content onto browser
         """
 
         body = self.client.request()
-        tokens = lex(body)
-        self.display_list = Layout(tokens).display_list
+        self.nodes = HTMLParser(body).parse()
+        self.display_list = Layout(self.nodes).display_list
         self.draw()
