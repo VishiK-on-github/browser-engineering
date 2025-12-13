@@ -234,7 +234,7 @@ class BlockLayout:
 
         if isinstance(self.node, Element) and self.node.tag == "pre":
             x2, y2 = self.x + self.width, self.y + self.height
-            rect = DrawRect(self.x, self.y, x2, y2, "blue")
+            rect = DrawRect(self.x, self.y, x2, y2, "gray")
             cmds.append(rect)
 
         return cmds
