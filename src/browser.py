@@ -1,8 +1,7 @@
 import tkinter
 
-# from client import Client, lex
 from client import Client
-from layout import Layout
+from document_layout import DocumentLayout, paint_tree
 from parser import HTMLParser, print_tree
 
 WIDTH = 800
@@ -53,12 +52,12 @@ class Browser:
         """
 
         self.canvas.delete("all")
-        for x, y, c, f in self.display_list:
+        for cmd in self.display_list:
             # dont draw below view
-            if y > self.scroll + HEIGHT: continue
+            if cmd.top > self.scroll + HEIGHT: continue
             # dont draw above
-            if y + VSTEP < self.scroll: continue
-            self.canvas.create_text(x, y - self.scroll, text=c, font=f, anchor="nw")
+            if cmd.bottom + VSTEP < self.scroll: continue
+            cmd.execute(self.scroll, self.canvas)
 
 
     def load(self):
@@ -68,5 +67,8 @@ class Browser:
 
         body = self.client.request()
         self.nodes = HTMLParser(body).parse()
-        self.display_list = Layout(self.nodes).display_list
+        self.document = DocumentLayout(self.nodes)
+        self.document.layout()
+        self.display_list = []
+        paint_tree(self.document, self.display_list)
         self.draw()
