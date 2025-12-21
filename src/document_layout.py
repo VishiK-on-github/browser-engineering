@@ -1,8 +1,10 @@
 from block_layout import BlockLayout
 
+
 HSTEP = 13
 VSTEP = 18
 WIDTH = 800
+
 
 class DocumentLayout:
     def __init__(self, node):
@@ -12,6 +14,10 @@ class DocumentLayout:
 
 
     def layout(self):
+        """
+        builds the layout tree
+        """
+
         child = BlockLayout(self.node, self, None)
         self.children.append(child)
 
@@ -24,10 +30,3 @@ class DocumentLayout:
 
     def paint(self):
         return []
-
-
-def paint_tree(layout_object, display_list):
-    display_list.extend(layout_object.paint())
-
-    for child in layout_object.children:
-        paint_tree(child, display_list)

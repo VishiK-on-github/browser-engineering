@@ -1,7 +1,6 @@
 import socket
 import ssl
 
-from text import Text
 
 class Client:
 
@@ -77,3 +76,28 @@ class Client:
         s.close()
 
         return content
+    
+
+    def resolve(self, url):
+        """
+        returns correct version of url object 
+        based on input string
+        """
+
+        if "://" in url: return Client(url)
+
+        if not url.startswith("/"):
+            dir, _ = self.path.rsplit("/", 1)
+            while url.startswith("../"):
+                _, url = url.split("/", 1)
+                if "/" in dir:
+                    dir, _ = dir.rsplit("/", 1)
+
+            url = dir + "/" + url
+
+        if url.startswith("//"):
+            return Client(self.scheme + ":" + url)
+        
+        else:
+            return Client(self.scheme + "://" + self.host + \
+                          ":" + str(self.port) + url)

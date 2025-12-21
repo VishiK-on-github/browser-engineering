@@ -23,8 +23,8 @@ class HTMLParser:
         parse page content to create tree of html nodes
         """
 
-        text = ""
-        in_tag = False
+        text: str = ""
+        in_tag: bool = False
         for c in self.body:
 
             if c == "<":
@@ -47,6 +47,9 @@ class HTMLParser:
     
 
     def add_text(self, text):
+        """
+        create and add text node to html tree
+        """
 
         # to discard space after removing doctype tag
         if text.isspace(): return
@@ -60,6 +63,9 @@ class HTMLParser:
 
 
     def add_tag(self, tag):
+        """
+        create and add tag node to html tree
+        """
 
         tag, attributes = self.get_attributes(tag)
 
@@ -120,6 +126,7 @@ class HTMLParser:
 
     
     def finish(self):
+        # TODO: docstring
         
         # for implicit tags
         if not self.unfinished:
@@ -134,7 +141,7 @@ class HTMLParser:
         return self.unfinished.pop()
     
 
-    def get_attributes(self, text):
+    def get_attributes(self, text: str):
         """
         used to extract tag attributes
         """
@@ -157,9 +164,3 @@ class HTMLParser:
                 attributes[attrpairs.casefold()] = ""
 
         return tag, attributes
-    
-
-def print_tree(node, indent=0):
-    print(" " * indent, node)
-    for child in node.children:
-        print_tree(child, indent+2)

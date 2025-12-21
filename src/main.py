@@ -6,7 +6,7 @@ if __name__ == "__main__":
     import sys
 
     browser = Browser(sys.argv[1])
-    browser.load()
+    browser.load(url=sys.argv[1])
 
     # event loop to keep the window alive and listen to events
     tkinter.mainloop()

@@ -1,15 +1,15 @@
-import tkinter
-import tkinter.font
-
 from text import Text
 from element import Element
 from draw import DrawText, DrawRect
+from helpers import get_font
+
 
 HSTEP = 13
 VSTEP = 18
 WIDTH = 800
 HEIGHT = 600
 FONTS = {}
+
 
 BLOCK_ELEMENTS = [
     "html", "body", "article", "section", "nav", "aside",
@@ -20,6 +20,7 @@ BLOCK_ELEMENTS = [
     "legend", "details", "summary"
 ]
 
+
 class BlockLayout:
     def __init__(self, node, parent, previous):
         self.node = node
@@ -27,10 +28,10 @@ class BlockLayout:
         self.previous = previous
         self.children = []
         self.display_list = []
-        self.x = None
-        self.y = None
-        self.width = None
-        self.height = None
+        self.x = 0
+        self.y = 0
+        self.width = 0
+        self.height = 0
 
 
     def flush(self):
@@ -43,108 +44,73 @@ class BlockLayout:
         if not self.line: return
 
         # calculate max ascent
-        metrics = [font.metrics() for x, word, font in self.line]
+        metrics = [font.metrics() for _, _, font, _ in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
 
         # calculating baseline using max ascent
         baseline = self.cursor_y + 1.25 * max_ascent
 
-        for rel_x, word, font in self.line:
+        for rel_x, word, font, color in self.line:
             x = self.x + rel_x
             y = self.y + baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
-
-        # moving up to accomodate words ascent
-        max_descent = max([metric["descent"] for metric in metrics])
-        self.cursor_y = baseline + 1.25 * max_descent
+            self.display_list.append((x, y, word, font, color))
 
         # rest back to start
         self.cursor_x = 0
         self.line = []
 
-
-    def open_tag(self, tag):
-        """
-        setting nodes attributes based on tags
-        """
-
-        if tag == "i":
-            self.style = "italic"
-
-        elif tag == "b":
-            self.weight = "bold"
-
-        elif tag == "small":
-            self.size -= 2
-
-        elif tag == "big":
-            self.size += 4
-
-        elif tag == "br":
-            self.flush()
+        # moving up to accomodate words ascent
+        max_descent = max([metric["descent"] for metric in metrics])
+        self.cursor_y = baseline + 1.25 * max_descent
 
 
-    def close_tag(self, tag):
-        """
-        resetting nodes attributes based on tags
-        """
-
-        if tag == "i":
-            self.style = "roman"
-        
-        elif tag == "b":
-            self.weight = "normal"
-
-        elif tag == "small":
-            self.size += 2
-
-        elif tag == "big":
-            self.size -= 4
-
-        elif tag == "p":
-            self.flush()
-            self.cursor_y += VSTEP
-
-
-    def recurse(self, tree):
+    def recurse(self, node):
         """
         recursively building tree of html nodes
         """
 
-        if isinstance(tree, Text):
+        if isinstance(node, Text):
                 
-            for word in tree.text.split():
-
-                self.word(word)
+            for word in node.text.split():
+                self.word(node, word)
 
         else:
 
-            self.open_tag(tree.tag)
-            for child in tree.children:
+            if node.tag == "br":
+                self.flush()
+            
+            for child in node.children:
                 self.recurse(child)
-            self.close_tag(tree.tag)
 
 
-    def word(self, word):
+    def word(self, node, word):
         """
         this method estimates when to break onto next line
         by making use of font & screen width
         """
 
-        font = get_font(self.size, self.weight, self.style)
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
+
+        if style == "normal": style = "roman"
+        size = int(float(node.style["font-size"][:-2]) * .75)
+        font = get_font(size, weight, style)
+
         w = font.measure(word)
         
         # break and next line when we reach blocks width
         if self.cursor_x + w >= self.width:
             self.flush()
 
-        self.line.append((self.cursor_x, word, font))
+        color = node.style["color"]
+
+        self.line.append((self.cursor_x, word, font, color))
         self.cursor_x += w + font.measure(" ")
 
 
     def layout_intermediate(self):
         """
-        this method converts html nodes into block layout nodes
+        converts html nodes into block layout nodes
         """
 
         prev = None
@@ -159,7 +125,7 @@ class BlockLayout:
 
     def layout_mode(self):
         """
-        method to determine if a node is block or inline
+        determines if a node is block or inline
         """
 
         if isinstance(self.node, Text):
@@ -226,37 +192,21 @@ class BlockLayout:
 
 
     def paint(self):
+        """
+        creates DrawRect, DrawText nodes based on layout modes
+        """
+
         cmds = []
 
-        if self.layout_mode() == "inline":
-            for x, y, word, font in self.display_list:
-                cmds.append(DrawText(x, y, word, font))
+        bg_color = self.node.style.get("background-color", "transparent")
 
-        if isinstance(self.node, Element) and self.node.tag == "pre":
+        if bg_color != "transparent":
             x2, y2 = self.x + self.width, self.y + self.height
-            rect = DrawRect(self.x, self.y, x2, y2, "gray")
+            rect = DrawRect(self.x, self.y, x2, y2, bg_color)
             cmds.append(rect)
 
+        if self.layout_mode() == "inline":
+            for x, y, word, font, color in self.display_list:
+                cmds.append(DrawText(x, y, word, font, color))
+
         return cmds
-
-
-def get_font(size, weight, style):
-    """
-    caching fonts to reuse instead of creating new objects
-    cheaper when we have a lot of text
-    """
-
-    key = (size, weight, style)
-
-    if key not in FONTS:
-        font = tkinter.font.Font(
-            size=size,
-            weight=weight,
-            slant=style
-        )
-
-        label = tkinter.Label(font=font)
-
-        FONTS[key] = (font, label)
-
-    return FONTS[key][0]

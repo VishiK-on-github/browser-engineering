@@ -3,7 +3,7 @@ class Element:
         self.tag = tag
         self.children = []
         self.parent = parent
-        self.atributes = attributes
+        self.attributes = attributes
 
 
     def __repr__(self):
