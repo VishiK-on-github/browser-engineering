@@ -2,7 +2,7 @@ import socket
 import ssl
 
 
-class Client:
+class URL:
 
     def __init__(self, url):
         self.scheme, url = url.split("://", 1)
@@ -84,7 +84,7 @@ class Client:
         based on input string
         """
 
-        if "://" in url: return Client(url)
+        if "://" in url: return URL(url)
 
         if not url.startswith("/"):
             dir, _ = self.path.rsplit("/", 1)
@@ -96,8 +96,24 @@ class Client:
             url = dir + "/" + url
 
         if url.startswith("//"):
-            return Client(self.scheme + ":" + url)
+            return URL(self.scheme + ":" + url)
         
         else:
-            return Client(self.scheme + "://" + self.host + \
+            return URL(self.scheme + "://" + self.host + \
                           ":" + str(self.port) + url)
+        
+    
+    def __str__(self) -> str:
+        """
+        get str representation of url object
+        """
+
+        port_part = ":" + str(self.port)
+
+        if self.scheme == "https" and self.port == 443:
+            port_part = ""
+
+        if self.scheme == "http" and self.port == 80:
+            port_part = ""
+
+        return self.scheme + "://" + self.host + port_part + self.path
