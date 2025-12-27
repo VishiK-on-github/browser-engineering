@@ -1,15 +1,17 @@
 from text import Text
 from element import Element
-from draw import DrawText, DrawRect, Rect
+from draw import DrawRect, Rect
 from helpers import get_font
 from text_layout import TextLayout
 from line_layout import LineLayout
+from input_layout import InputLayout
 
 
 HSTEP = 13
 VSTEP = 18
 WIDTH = 800
 HEIGHT = 600
+INPUT_WIDTH_PX = 200
 FONTS = {}
 
 
@@ -52,9 +54,39 @@ class BlockLayout:
 
             if node.tag == "br":
                 self.new_line()
+
+            elif node.tag == "input" or node.tag == "button":
+                self.input(node)
             
             for child in node.children:
                 self.recurse(child)
+
+
+    def input(self, node):
+        """
+        compute styling, sizing info for input html elements
+        """
+
+        w = INPUT_WIDTH_PX
+
+        if self.cursor_x + w > self.width:
+            self.new_line()
+
+        line = self.children[-1]
+        prev_word = line.children[-1] if self.children else None
+
+        input = InputLayout(node, line, prev_word)
+        line.children.append(input)
+
+        weight = node.style["font-weight"]
+        style = node.style["font-style"]
+
+        if style == "normal": style = "roman"
+
+        size = int(float(node.style["font-size"][:-2]) * 0.75)
+        font = get_font(size, weight, style)
+
+        self.cursor_x += w + font.measure(" ")
 
 
     def word(self, node, word):
@@ -123,7 +155,7 @@ class BlockLayout:
                   child.tag in BLOCK_ELEMENTS for child in self.node.children]):
             return "block"
         
-        elif self.node.children:
+        elif self.node.children or self.node.tag == "input":
             return "inline"
         
         else:
@@ -187,7 +219,13 @@ class BlockLayout:
             cmds.append(rect)
 
         return cmds
+    
+
+    def should_paint(self):
+        # TODO: docstring
+
+        return isinstance(self.node, Text) or (self.node.tag != "input" and self.node.tag != "button")
 
 
     def __repr__(self):
-        return f"BlockLayout[{self.layout_mode()}](x={self.x}, y={self.y}, width={self.width}, height={self.height})"
+        return f"BlockLayout[{self.layout_mode()}](x={self.x}, y={self.y}, width={self.width}, height={self.height}, node={self.node})"

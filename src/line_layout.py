@@ -54,5 +54,9 @@ class LineLayout:
         return []
     
 
+    def should_paint(self):
+        return True
+    
+
     def __repr__(self) -> str:
         return f"LineLayout(x={self.x}, y={self.y}, width={self.width}, height={self.height})"

@@ -35,3 +35,7 @@ class DocumentLayout:
 
     def paint(self):
         return []
+    
+
+    def should_paint(self):
+        return True

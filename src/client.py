@@ -26,7 +26,7 @@ class URL:
             self.port = int(port)
 
 
-    def request(self):
+    def request(self, payload=None):
         
         # setting up connection to host
         s = socket.socket(
@@ -44,15 +44,28 @@ class URL:
             ctx = ssl.create_default_context()
             s = ctx.wrap_socket(s, server_hostname=self.host)
 
+        # determine http method to be used for request
+        method = "POST" if payload else "GET"
+
         # setting up additional info for sending request to host
-        request = f"GET {self.path} HTTP/1.0\r\n"
+        request = f"{method} {self.path} HTTP/1.0\r\n"
+
+        if payload:
+            length = len(payload.encode("utf8"))
+            request += f"Content-Length: {length}"
+
         request += f"Host: {self.host}\r\n"
+
         # \r\n is put twice at end to tell the server that request has ended
         request += "\r\n"
 
-        # encode into bytes before sending out request
+        # add payload to request
+        if payload: request += payload
+
+        # encode using utf8 encoding to bytes before sending out request
         s.send(request.encode("utf8"))
 
+        # we wrap socket into a file-like object so we can use read data from it
         response = s.makefile("r", encoding="utf8", newline="\r\n")
 
         statusline = response.readline()
@@ -60,6 +73,8 @@ class URL:
 
         # gathering headers
         response_headers = {}
+
+        # read response from server line by line
         while True:
 
             line = response.readline()
@@ -69,6 +84,7 @@ class URL:
 
         # strategy used while trasmitting data
         assert "transfer-encoding" not in response_headers
+
         # strategy used while compressing data
         assert "content-encoding" not in response_headers
 

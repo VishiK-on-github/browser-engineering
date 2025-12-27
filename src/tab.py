@@ -1,5 +1,4 @@
-import tkinter
-from client import URL
+import urllib
 from document_layout import DocumentLayout
 from html_parser import HTMLParser
 from css_parser import CSSParser, style, cascade_priority
@@ -27,6 +26,8 @@ class Tab:
         # store history data
         self.history = []
 
+        self.focus = None
+
 
     def scrolldown(self):
         """
@@ -50,6 +51,11 @@ class Tab:
         executed when left mouse button clicked
         """
 
+        if self.focus:
+            self.focus.is_focused = True
+
+        self.focus = None
+
         # making position relative to web page
         y += self.scroll
 
@@ -61,14 +67,57 @@ class Tab:
         elt = objs[-1].node
 
         while elt:
+
             if isinstance(elt, Text):
                 pass
                 
             elif elt.tag == "a" and "href" in elt.attributes:
                 url = self.url.resolve(elt.attributes["href"])
                 return self.load(url)
+            
+            elif elt.tag == "input":
+                elt.attributes["value"] = ""
+                self.focus = elt
+                elt.is_focused = True
+                return self.render()
+
+            elif elt.tag == "button":
+                while elt:
+                    if elt.tag == "form" and "action" in elt.attributes:
+                        return self.submit_form(elt)
+                    
+                    elt = elt.parent
 
             elt = elt.parent
+
+        self.render()
+
+
+    def submit_form(self, elt):
+        """
+        extract form values from the form inputs
+        """
+
+        inputs = [node for node in tree_to_list(elt, [])
+                  if isinstance(node, Element) 
+                  and node.tag == "input"
+                  and "name" in node.attributes]
+        
+        body = ""
+
+        for input in inputs:
+
+            name = input.attributes["name"]
+            value = input.attributes.get("value", "")
+
+            name = urllib.parse.quote(name)
+            value = urllib.parse.quote(value)
+
+            body += "&" + name + "=" + value
+
+        body = body[1:]
+        url = self.url.resolve(elt.attributes["action"])
+        self.load(url, body)
 
 
     def draw(self, canvas, offset):
@@ -88,22 +137,22 @@ class Tab:
             cmd.execute(self.scroll - offset, canvas)
 
 
-    def load(self, url):
+    def load(self, url, payload=None):
         """
         render servers content onto browser
         """
 
         # download html file from the server
-        body = url.request()
         self.scroll = 0
         self.url = url
         self.history.append(url)
+        body = url.request(payload)
 
         # parse html file and create tree of nodes
         self.nodes = HTMLParser(body).parse()
 
         # init css rules with a copy of default stylesheet
-        rules = DEFAULT_STYLE_SHEET.copy()
+        self.rules = DEFAULT_STYLE_SHEET.copy()
 
         # get links of all stylesheets which the webpage uses
         links = [node.attributes["href"]
@@ -124,20 +173,11 @@ class Tab:
             except:
                 continue
             
-            rules.extend(CSSParser(body).parse())
+            self.rules.extend(CSSParser(body).parse())
 
-        # apply styling info to all the nodes based on priority
-        style(self.nodes, sorted(rules, key=cascade_priority))
+        self.render()
 
-        # init and build a tree of block layout objects
-        self.document = DocumentLayout(self.nodes)
-        self.document.layout()
-        self.display_list = []
 
-        # compute objects based on layout type
-        paint_tree(self.document, self.display_list)
-
-    
     def go_back(self):
         """
         gets previous url and loads tab
@@ -147,6 +187,34 @@ class Tab:
             self.history.pop()
             back = self.history.pop()
             self.load(back)
+
+
+    def render(self):
+        """
+        performs styling, layout, paint and draw phases
+        """
+
+        # apply styling info to all the nodes based on priority
+        style(self.nodes, sorted(self.rules, key=cascade_priority))
+        
+        # init and build a tree of block layout objects
+        self.document = DocumentLayout(self.nodes)
+        self.document.layout()
+        self.display_list = []
+
+        # compute objects based on layout type
+        paint_tree(self.document, self.display_list)
+
+
+    def keypress(self, char):
+        """
+        when focused on an element add characters.
+        useful for input boxes.
+        """
+
+        if self.focus:
+            self.focus.attributes["value"] += char
+            self.render()
 
 
     def __repr__(self):

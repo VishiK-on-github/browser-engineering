@@ -52,5 +52,9 @@ class TextLayout:
         return [DrawText(self.x, self.y, self.word, self.font, color)]
 
 
+    def should_paint(self):
+        return True
+
+
     def __repr__(self):
         return f"TextLayout(x={self.x}, y={self.y}, width={self.width}, height={self.height}, word={self.word})"

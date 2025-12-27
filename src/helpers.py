@@ -18,7 +18,10 @@ def paint_tree(layout_object, display_list):
     traverse layout objects compute DrawText, DrawRect nodes
     """
 
-    display_list.extend(layout_object.paint())
+    # check if a layout object should be painted or not
+    # important to check for input / button html elements
+    if layout_object.should_paint():
+        display_list.extend(layout_object.paint())
 
     for child in layout_object.children:
         paint_tree(child, display_list)

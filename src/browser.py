@@ -73,9 +73,15 @@ class Browser:
         """
        
         if e.y < self.chrome.bottom:
+            # set focus for browser to be None, since we 
+            # are currently on browser common ui contents
+            self.focus = None
             self.chrome.click(e.x, e.y)
 
         else:
+            # set focus back since we are on the browser content
+            self.focus = "content"
+            self.chrome.blur()
             tab_y = e.y - self.chrome.bottom
             self.active_tab.click(e.x, tab_y)
 
@@ -89,11 +95,15 @@ class Browser:
 
         if len(e.char) == 0: return
 
-        # ignore keypress if it falls beyond certain hex
+        # ignore key char if it falls beyond certain hex
         if not (0x20 <= ord(e.char) < 0x7f): return
 
-        self.chrome.keypress(e.char)
-        self.draw()
+        if self.chrome.keypress(e.char):
+            self.draw()
+
+        elif self.focus == "content":
+            self.chrome.keypress(e.char)
+            self.draw()
 
 
     def handle_enter(self, e):
@@ -191,6 +201,14 @@ class Chrome:
             tab_start + tab_width * (i + 1), self.tabbar_bottom)
     
 
+    def blur(self):
+        """
+        set the common ui focus to be none. 
+        """
+
+        self.focus = None
+    
+
     def paint(self):
         """
         lays out draw objects to be rendered
@@ -261,16 +279,20 @@ class Chrome:
 
         self.focus = None
 
+        # click event has occured on new tab button
         if self.newtab_rect.contains_point(x, y):
             self.browser.new_tab(URL("https://browser.engineering/"))
 
+        # click event has occured on back button
         elif self.back_rect.contains_point(x, y):
             self.browser.active_tab.go_back()
 
+        # click event has occured on address bar
         elif self.address_rect.contains_point(x, y):
             self.focus = "Address Bar"
             self.address_bar = ""
 
+        # click event has occured on one of the tabs
         else:
             for i, tab in enumerate(self.browser.tabs):
                 if self.tab_rect(i).contains_point(x, y):
@@ -285,6 +307,9 @@ class Chrome:
 
         if self.focus == "Address Bar":
             self.address_bar += char
+            return True
+
+        return False
 
 
     def enter(self):
