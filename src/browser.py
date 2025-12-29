@@ -101,8 +101,9 @@ class Browser:
         if self.chrome.keypress(e.char):
             self.draw()
 
+        # event flow and redraw when are in the browser
         elif self.focus == "content":
-            self.chrome.keypress(e.char)
+            self.active_tab.keypress(e.char)
             self.draw()
 
 
@@ -219,7 +220,7 @@ class Chrome:
         cmds.append(DrawRect(Rect(0, 0, WIDTH, self.bottom), "white"))
         cmds.append(DrawLine(0, self.bottom, WIDTH, self.bottom, "black", 1))
 
-        # TODO
+        # drawing components for new tab button
         cmds.append(DrawOutline(self.newtab_rect, "black", 1))
         cmds.append(DrawText(self.newtab_rect.left + self.padding,
                              self.newtab_rect.top, "+", self.font, "black"))

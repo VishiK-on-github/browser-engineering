@@ -52,7 +52,7 @@ class URL:
 
         if payload:
             length = len(payload.encode("utf8"))
-            request += f"Content-Length: {length}"
+            request += f"Content-Length: {length}\r\n"
 
         request += f"Host: {self.host}\r\n"
 

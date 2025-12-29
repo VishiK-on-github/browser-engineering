@@ -4,6 +4,7 @@ from html_parser import HTMLParser
 from css_parser import CSSParser, style, cascade_priority
 from element import Element
 from text import Text
+from js_context import JSContext
 from helpers import paint_tree, tree_to_list
 
 
@@ -12,7 +13,7 @@ HEIGHT = 600
 HSTEP = 13
 VSTEP = 18
 SCROLL_STEP = 50
-DEFAULT_STYLE_SHEET = CSSParser(open("./testing_files/browser.css").read()).parse()
+DEFAULT_STYLE_SHEET = CSSParser(open("./browser.css").read()).parse()
 
 
 class Tab:
@@ -72,16 +73,19 @@ class Tab:
                 pass
                 
             elif elt.tag == "a" and "href" in elt.attributes:
+                if self.js.dispatch_event("click", elt): return
                 url = self.url.resolve(elt.attributes["href"])
                 return self.load(url)
             
             elif elt.tag == "input":
+                if self.js.dispatch_event("click", elt): return
                 elt.attributes["value"] = ""
                 self.focus = elt
                 elt.is_focused = True
                 return self.render()
 
             elif elt.tag == "button":
+                if self.js.dispatch_event("click", elt): return
                 while elt:
                     if elt.tag == "form" and "action" in elt.attributes:
                         return self.submit_form(elt)
@@ -97,6 +101,8 @@ class Tab:
         """
         extract form values from the form inputs
         """
+
+        if self.js.dispatch_event("submit", elt): return
 
         inputs = [node for node in tree_to_list(elt, [])
                   if isinstance(node, Element) 
@@ -116,6 +122,7 @@ class Tab:
             body += "&" + name + "=" + value
 
         body = body[1:]
+
         url = self.url.resolve(elt.attributes["action"])
         self.load(url, body)
 
@@ -151,16 +158,40 @@ class Tab:
         # parse html file and create tree of nodes
         self.nodes = HTMLParser(body).parse()
 
+        # get links of all scripts used by the webpage
+        scripts = [node.attributes["src"] 
+                   for node in tree_to_list(self.nodes, []) 
+                   if isinstance(node, Element)
+                   and node.tag == "script"
+                   and "src" in node.attributes]
+        
         # init css rules with a copy of default stylesheet
         self.rules = DEFAULT_STYLE_SHEET.copy()
 
-        # get links of all stylesheets which the webpage uses
+        # get links of all stylesheets used by the webpage
         links = [node.attributes["href"]
                  for node in tree_to_list(self.nodes, [])
                  if isinstance(node, Element)
                  and node.tag == "link"
                  and node.attributes.get("rel") == "stylesheet"
                  and "href" in node.attributes]
+
+        # instance of js interpreter, we use a 
+        # single context to load multiple scripts
+        self.js = JSContext(self)
+        
+        # download js scripts used by the document
+        for script in scripts:
+            script_url = self.url.resolve(script)
+
+            try:
+
+                body = script_url.request()
+
+            except:
+                continue
+
+            self.js.run(script, body)
         
         # iterate and download stylesheets and 
         # append rules to existing rules
@@ -213,6 +244,7 @@ class Tab:
         """
 
         if self.focus:
+            if self.js.dispatch_event("keydown", self.focus): return
             self.focus.attributes["value"] += char
             self.render()
 

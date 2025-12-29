@@ -58,8 +58,9 @@ class BlockLayout:
             elif node.tag == "input" or node.tag == "button":
                 self.input(node)
             
-            for child in node.children:
-                self.recurse(child)
+            else:
+                for child in node.children:
+                    self.recurse(child)
 
 
     def input(self, node):
@@ -73,7 +74,7 @@ class BlockLayout:
             self.new_line()
 
         line = self.children[-1]
-        prev_word = line.children[-1] if self.children else None
+        prev_word = line.children[-1] if line.children else None
 
         input = InputLayout(node, line, prev_word)
         line.children.append(input)
@@ -222,7 +223,10 @@ class BlockLayout:
     
 
     def should_paint(self):
-        # TODO: docstring
+        """
+        determine which html elements must be rendered.
+        used to prevent double rendering.
+        """
 
         return isinstance(self.node, Text) or (self.node.tag != "input" and self.node.tag != "button")
 
