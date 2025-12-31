@@ -6,6 +6,7 @@ from html_parser import HTMLParser
 
 
 RUNTIME_JS = open("runtime.js").read()
+# creates an event of type and for a node associated with a handler in js context
 EVENT_DISPATCH_JS = "new Node(dukpy.handle).dispatchEvent(new Event(dukpy.type))"
 
 
@@ -29,6 +30,8 @@ class JSContext:
         self.interp.export_function("getAttribute", self.getAttribute)
 
         self.interp.export_function("innerHTML_set", self.innerHTML_set)
+
+        self.interp.export_function("XMLHttpRequest_send", self.XMLHttpRequest_send)
 
         # js runtime, executes before any other js code/scripts
         self.interp.evaljs(RUNTIME_JS)
@@ -91,7 +94,7 @@ class JSContext:
     def get_handle(self, elt):
         """
         fetches functions which translate js dom 
-        to browser dom actions
+        to browser dom element
         """
 
         if elt not in self.node_to_handle:
@@ -106,7 +109,9 @@ class JSContext:
     
 
     def dispatch_event(self, type, elt):
-        # TODO: docstring
+        """
+        Uses handles to dispatch events in js context
+        """
 
         handle = self.node_to_handle.get(elt, -1)
 
@@ -143,3 +148,24 @@ class JSContext:
         except:
             traceback.print_exc()
             raise
+
+
+    def XMLHttpRequest_send(self, method, url, body):
+        """
+        implements XMLHttpRequest API.
+        Used to make request to websites from a loaded page.
+        """
+
+        full_url = self.tab.url.resolve(url)
+
+        if not self.tab.allowed_request(full_url):
+            raise Exception("Cross-Origin XHR blocked by CSP !")
+
+        headers, out = full_url.request(self.tab.url, body)
+
+        # compare origins to prevent accessing 
+        # other websites to steal info
+        if full_url.origin() != self.tab.url.origin():
+            raise Exception("Cross-Origin XHR request is not allowed !")
+
+        return out

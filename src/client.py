@@ -2,6 +2,9 @@ import socket
 import ssl
 
 
+COOKIE_JAR = {}
+
+
 class URL:
 
     def __init__(self, url):
@@ -26,7 +29,7 @@ class URL:
             self.port = int(port)
 
 
-    def request(self, payload=None):
+    def request(self, referrer, payload=None):
         
         # setting up connection to host
         s = socket.socket(
@@ -50,11 +53,26 @@ class URL:
         # setting up additional info for sending request to host
         request = f"{method} {self.path} HTTP/1.0\r\n"
 
+        request += f"Host: {self.host}\r\n"
+
+        # sending cookies for a host if they have been set
+        if self.host in COOKIE_JAR:
+            cookie, params = COOKIE_JAR[self.host]
+            allow_cookie = True
+
+            # uses samesite cookie to determine whether cookie should
+            # be allowed to be used or not
+            if referrer and params.get("samesite", "none") == "lax":
+                if method != "GET":
+                    allow_cookie = self.host == referrer.host
+            
+            # adding cookie to request payload
+            if allow_cookie:
+                request += f"Cookie: {cookie}\r\n"
+
         if payload:
             length = len(payload.encode("utf8"))
             request += f"Content-Length: {length}\r\n"
-
-        request += f"Host: {self.host}\r\n"
 
         # \r\n is put twice at end to tell the server that request has ended
         request += "\r\n"
@@ -82,6 +100,24 @@ class URL:
             header, value = line.split(":", 1)
             response_headers[header.casefold()] = value.strip()
 
+        # update cookies when we see cookie in headers
+        if "set-cookie" in response_headers:
+            cookie = response_headers["set-cookie"]
+            params = {}
+            if ";" in cookie:
+                cookie, rest = cookie.split(";", 1)
+
+                for param in rest.split(";"):
+                    if "=" in param:
+                        param, value = param.split("=", 1)
+
+                    else:
+                        value = "true"
+
+                    params[param.strip().casefold()] = value.casefold()
+
+            COOKIE_JAR[self.host] = (cookie, params)
+
         # strategy used while trasmitting data
         assert "transfer-encoding" not in response_headers
 
@@ -91,7 +127,7 @@ class URL:
         content = response.read()
         s.close()
 
-        return content
+        return response_headers, content
     
 
     def resolve(self, url):
@@ -133,3 +169,11 @@ class URL:
             port_part = ""
 
         return self.scheme + "://" + self.host + port_part + self.path
+    
+
+    def origin(self):
+        """
+        returns the origin from a url
+        """
+
+        return self.scheme + "://" + self.host + ":" + str(self.port)

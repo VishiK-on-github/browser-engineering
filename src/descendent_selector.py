@@ -6,7 +6,9 @@ class DescendantSelector:
 
 
     def matches(self, node):
-        # TODO: docstring
+        """
+        Checks if a html node matches a css selector
+        """
 
         if not self.descendant.matches(node): return False
 

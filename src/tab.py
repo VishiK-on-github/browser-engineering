@@ -6,6 +6,7 @@ from element import Element
 from text import Text
 from js_context import JSContext
 from helpers import paint_tree, tree_to_list
+from client import URL
 
 
 WIDTH = 800
@@ -127,6 +128,14 @@ class Tab:
         self.load(url, body)
 
 
+    def allowed_request(self, url):
+        """
+        checks whether an origin is allowed by the csp
+        """
+
+        return self.allowed_origins == None or url.origin() in self.allowed_origins
+
+
     def draw(self, canvas, offset):
         """
         draw chars using chars & positions onto the canvas
@@ -153,10 +162,22 @@ class Tab:
         self.scroll = 0
         self.url = url
         self.history.append(url)
-        body = url.request(payload)
+        headers, body = url.request(self.url, payload)
 
         # parse html file and create tree of nodes
         self.nodes = HTMLParser(body).parse()
+
+        # used to specify csp, this is done to prevent loading js scripts 
+        # if they originate from some different origin than one in csp
+        self.allowed_origins = None
+        if "content-security-policy" in headers:
+            csp = headers["content-security-policy"].split()
+
+            if len(csp) > 0 and csp[0] == "default-src":
+                self.allowed_origins = []
+                
+                for origin in csp[1:]:
+                    self.allowed_origins.append(URL(origin).origin())
 
         # get links of all scripts used by the webpage
         scripts = [node.attributes["src"] 
@@ -184,9 +205,13 @@ class Tab:
         for script in scripts:
             script_url = self.url.resolve(script)
 
+            if not self.allowed_request(script_url):
+                print("Blocked script", script, "due to CSP !")
+                continue
+
             try:
 
-                body = script_url.request()
+                headers, body = script_url.request(url)
 
             except:
                 continue
@@ -199,7 +224,7 @@ class Tab:
             style_url = self.url.resolve(link)
 
             try:
-                body = style_url.request()
+                headers, body = style_url.request(url)
 
             except:
                 continue

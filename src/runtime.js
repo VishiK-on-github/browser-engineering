@@ -2,6 +2,7 @@
 console = { log: function(x) { call_python("log", x); } }
 
 // implements DOM APIs
+// used to modify the DOM tree state
 document = { querySelectorAll: function(s) {
     var handles = call_python("querySelectorAll", s);
     return handles.map(function(h) { return new Node(h) });
@@ -46,4 +47,18 @@ Node.prototype.dispatchEvent = function(evt) {
         list[i].call(this, evt);
     }
     return evt.do_default;
+}
+
+// CSR - cross site request
+// helps us make submit forms without reloading the whole page
+function XMLHttpRequest() {}
+
+XMLHttpRequest.prototype.open = function(method, url, is_async) {
+    if (is_async) throw Error("Async XHR is not supported !");
+    this.method = method;
+    this.url = url;
+}
+
+XMLHttpRequest.prototype.send = function(body) {
+    this.responseText = call_python("XMLHttpRequest_send", this.method, this.url, body);
 }

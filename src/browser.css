@@ -9,4 +9,7 @@ button {
     background-color: orange;
 }
 
-strong { font-weight: bold; color: red; }
+strong { 
+    font-weight: bold; 
+    color: red; 
+}
