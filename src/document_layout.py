@@ -39,3 +39,8 @@ class DocumentLayout:
 
     def should_paint(self):
         return True
+    
+
+    def paint_effects(self, cmds):
+
+        return cmds

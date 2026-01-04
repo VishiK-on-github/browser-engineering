@@ -1,6 +1,8 @@
-from draw import Rect, DrawRect, DrawText, DrawLine
+from draw import DrawRRect, DrawText, DrawLine
 from text import Text
-from helpers import get_font
+from helpers import get_font, linespace
+from blend import paint_visual_effects
+import skia
 
 
 INPUT_WIDTH_PX = 200
@@ -28,31 +30,33 @@ class InputLayout:
 
         weight = self.node.style["font-weight"]
         style = self.node.style["font-style"]
-
-        if style == "normal": style = "roman"
-
         size = int(float(self.node.style["font-size"][:-2]) * .75)
         self.font = get_font(size, weight, style)
 
         self.width = INPUT_WIDTH_PX
+        self.height = linespace(self.font)
 
         if self.previous:
-            space = self.previous.font.measure(" ")
+            space = self.previous.font.measureText(" ")
             self.x = self.previous.x + space + self.previous.width
+
         else:
             self.x = self.parent.x
 
-        self.height = self.font.metrics("linespace")
-
 
     def self_rect(self):
-        return Rect(self.x, self.y, 
+        return skia.Rect.MakeLTRB(self.x, self.y, 
                     self.x + self.width, 
                     self.y + self.height)
     
 
     def should_paint(self):
         return True
+    
+
+    def paint_effects(self, cmds):
+
+        return paint_visual_effects(self.node, cmds, self.self_rect())
 
 
     def paint(self):
@@ -65,8 +69,9 @@ class InputLayout:
         bg_color = self.node.style.get("background-color", "transparent")
 
         if bg_color != "transparent":
-            rect = DrawRect(self.self_rect(), bg_color)
-            cmds.append(rect)
+            radius = float(self.node.style.get("border-radius", "0px")[:-2])
+            rrect = DrawRRect(self.self_rect(), radius, bg_color)
+            cmds.append(rrect)
 
         if self.node.tag == "input":
             text = self.node.attributes.get("value", "")
@@ -83,7 +88,7 @@ class InputLayout:
         cmds.append(DrawText(self.x, self.y, text, self.font, color))
 
         if self.node.is_focused:
-            cx = self.x + self.font.measure(text)
+            cx = self.x + self.font.measureText(text)
             cmds.append(DrawLine(cx, self.y, cx, self.y + self.height, "black", 1))
 
         return cmds

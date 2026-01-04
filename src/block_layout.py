@@ -1,10 +1,12 @@
 from text import Text
 from element import Element
-from draw import DrawRect, Rect
+from draw import DrawRRect, DrawRect
 from helpers import get_font
 from text_layout import TextLayout
 from line_layout import LineLayout
 from input_layout import InputLayout
+from blend import paint_visual_effects
+import skia
 
 
 HSTEP = 13
@@ -82,12 +84,10 @@ class BlockLayout:
         weight = node.style["font-weight"]
         style = node.style["font-style"]
 
-        if style == "normal": style = "roman"
-
         size = int(float(node.style["font-size"][:-2]) * 0.75)
         font = get_font(size, weight, style)
 
-        self.cursor_x += w + font.measure(" ")
+        self.cursor_x += w + font.measureText(" ")
 
 
     def word(self, node, word):
@@ -98,12 +98,10 @@ class BlockLayout:
 
         weight = node.style["font-weight"]
         style = node.style["font-style"]
-
-        if style == "normal": style = "roman"
         size = int(float(node.style["font-size"][:-2]) * .75)
         font = get_font(size, weight, style)
 
-        w = font.measure(word)
+        w = font.measureText(word)
 
         # if cursor goes beyond a limit break 
         # content into a new line
@@ -114,7 +112,7 @@ class BlockLayout:
         prev_word = line.children[-1] if line.children else None
         text = TextLayout(node, word, line, prev_word)
         line.children.append(text)
-        self.cursor_x += w + font.measure(" ")
+        self.cursor_x += w + font.measureText(" ")
 
 
     def new_line(self):
@@ -203,7 +201,7 @@ class BlockLayout:
     
 
     def self_rect(self):
-        return Rect(self.x, self.y, self.x + self.width, self.y + self.height)
+        return skia.Rect.MakeLTRB(self.x, self.y, self.x + self.width, self.y + self.height)
 
 
     def paint(self):
@@ -216,11 +214,18 @@ class BlockLayout:
         bg_color = self.node.style.get("background-color", "transparent")
 
         if bg_color != "transparent":
-            rect = DrawRect(self.self_rect(), bg_color)
-            cmds.append(rect)
+            radius = float(self.node.style.get("border-radius", "0px")[:-2])
+            cmds.append(DrawRRect(self.self_rect(), radius, bg_color))
 
         return cmds
     
+
+    def paint_effects(self, cmds):
+
+        cmds = paint_visual_effects(self.node, cmds, self.self_rect())
+
+        return cmds
+
 
     def should_paint(self):
         """
@@ -232,4 +237,5 @@ class BlockLayout:
 
 
     def __repr__(self):
-        return f"BlockLayout[{self.layout_mode()}](x={self.x}, y={self.y}, width={self.width}, height={self.height}, node={self.node})"
+        return f"BlockLayout[{self.layout_mode()}](x={self.x}, y={self.y}, \
+            width={self.width}, height={self.height}, node={self.node})"

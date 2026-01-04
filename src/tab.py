@@ -72,7 +72,8 @@ class Tab:
 
             if isinstance(elt, Text):
                 pass
-                
+            
+            # if click on a link load the page associated with link
             elif elt.tag == "a" and "href" in elt.attributes:
                 if self.js.dispatch_event("click", elt): return
                 url = self.url.resolve(elt.attributes["href"])
@@ -136,21 +137,14 @@ class Tab:
         return self.allowed_origins == None or url.origin() in self.allowed_origins
 
 
-    def draw(self, canvas, offset):
+    def raster(self, canvas):
         """
-        draw chars using chars & positions onto the canvas
+        draw items using positions onto the canvas
         """
 
         # iterate and render items
         for cmd in self.display_list:
-
-            # dont draw below view
-            if cmd.rect.top > self.scroll + self.tab_height:
-                continue
-
-            # dont draw above
-            if cmd.rect.bottom < self.scroll: continue
-            cmd.execute(self.scroll - offset, canvas)
+            cmd.execute(canvas)
 
 
     def load(self, url, payload=None):
@@ -272,6 +266,9 @@ class Tab:
             if self.js.dispatch_event("keydown", self.focus): return
             self.focus.attributes["value"] += char
             self.render()
+
+
+    def draw(self, canvas, offset): pass
 
 
     def __repr__(self):
