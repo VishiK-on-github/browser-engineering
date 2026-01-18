@@ -14,7 +14,7 @@ Node.prototype.getAttribute = function(attr) {
     return call_python("getAttribute", this.handle, attr);
 }
 
-LISTENERS = {}
+LISTENERS = {};
 
 function Event(type) {
     this.type = type
@@ -51,14 +51,61 @@ Node.prototype.dispatchEvent = function(evt) {
 
 // CSR - cross site request
 // helps us make submit forms without reloading the whole page
-function XMLHttpRequest() {}
+XHR_REQUEST = {};
+
+function XMLHttpRequest() {
+    this.handle = Object.keys(XHR_REQUEST).length;
+    XHR_REQUEST[this.handle] = this;
+}
 
 XMLHttpRequest.prototype.open = function(method, url, is_async) {
-    if (is_async) throw Error("Async XHR is not supported !");
+    this.is_async = is_async;
     this.method = method;
     this.url = url;
 }
 
 XMLHttpRequest.prototype.send = function(body) {
-    this.responseText = call_python("XMLHttpRequest_send", this.method, this.url, body);
+    this.responseText = call_python("XMLHttpRequest_send", 
+        this.method, this.url, body, this.is_async, this.handle);
+}
+
+// callbacks for running async XHR
+SET_TIMEOUT_REQUESTS = {}
+
+function setTimeout(callback, time_delta) {
+    var handle = Object.keys(SET_TIMEOUT_REQUESTS).length;
+    SET_TIMEOUT_REQUESTS[handle] = callback;
+    call_python("setTimeout", handle, time_delta);
+}
+
+function __runSetTimeout(handle) {
+    var callback = SET_TIMEOUT_REQUESTS[handle];
+    callback();
+}
+
+function __runXHROnload(body, handle) {
+    var obj = XHR_REQUEST[handle];
+    var event = new Event('load');
+    obj.responseText = body;
+
+    if (obj.onload) { obj.onload(event); }
+}
+
+// request frame animation
+RAF_LISTENERS = [];
+
+// requestAnimationFrame is used to run an callback
+// at the beginning of the rendering task. This would
+// ensure that page will be rendered correctly
+function requestAnimationFrame(fn) {
+    RAF_LISTENERS.push(fn);
+    call_python("requestAnimationFrame");
+}
+
+function __runRAFHandlers() {
+    var handlers_copy = RAF_LISTENERS;
+    RAF_LISTENERS = [];
+    for (var i = 0; i < handlers_copy.length; i++) {
+        handlers_copy[i]();
+    }
 }

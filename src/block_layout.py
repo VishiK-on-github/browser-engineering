@@ -1,6 +1,6 @@
 from text import Text
 from element import Element
-from draw import DrawRRect, DrawRect
+from draw import DrawRRect
 from helpers import get_font
 from text_layout import TextLayout
 from line_layout import LineLayout

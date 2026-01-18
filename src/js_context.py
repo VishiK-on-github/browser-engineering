@@ -3,11 +3,16 @@ import traceback
 from css_parser import CSSParser
 from helpers import tree_to_list
 from html_parser import HTMLParser
+import threading
+from task import Task
 
 
 RUNTIME_JS = open("runtime.js").read()
 # creates an event of type and for a node associated with a handler in js context
 EVENT_DISPATCH_JS = "new Node(dukpy.handle).dispatchEvent(new Event(dukpy.type))"
+
+SETTIMEOUT_JS = "__runSetTimeout(dukpy.handle)"
+XHR_ONLOAD_JS = "__runXHROnload(dukpy.out, dukpy.handle)"
 
 
 class JSContext:
@@ -15,6 +20,10 @@ class JSContext:
         
         # specifying tab for which js context is being defined
         self.tab = tab
+
+        # it is used to prevent async tasks completion on one 
+        # tab from affecting behaviour of another tab
+        self.discarded = False
 
         self.interp = dukpy.JSInterpreter()
 
@@ -33,8 +42,18 @@ class JSContext:
 
         self.interp.export_function("XMLHttpRequest_send", self.XMLHttpRequest_send)
 
+        self.interp.export_function("setTimeout", self.setTimeout)
+
+        self.interp.export_function("requestAnimationFrame", self.requestAnimationFrame)
+
+        # start profiling js runtime eval
+        self.tab.browser.measure.time('script-runtime')
+
         # js runtime, executes before any other js code/scripts
         self.interp.evaljs(RUNTIME_JS)
+
+        # end profiling js runtime eval
+        self.tab.browser.measure.stop('script-runtime')
 
         # keeps track of functions which bridge python 
         # based element nodes and js based node tree nodes
@@ -48,9 +67,13 @@ class JSContext:
         """
 
         try:
-            return self.interp.evaljs(code)
+
+            self.tab.browser.measure.time('script-load')
+            self.interp.evaljs(code)
+            self.tab.browser.measure.stop('script-load')
 
         except dukpy.JSRuntimeError as e:
+            self.tab.browser.measure.stop('script-load')
             print("script", script, "crashed :(\n\n", e)
 
     
@@ -142,15 +165,27 @@ class JSContext:
             for child in elt.children:
                 child.parent = elt
 
-            # re render
-            self.tab.render()
+            # re render, since we have modified the layout tree
+            self.tab.set_needs_render()
 
         except:
             traceback.print_exc()
             raise
 
 
-    def XMLHttpRequest_send(self, method, url, body):
+    def dispatch_xhr_onload(self, out, handle):
+        """
+        dispatch XHR request back to js runtime
+        """
+
+        if self.discarded: return
+
+        self.tab.browser.measure.time('script-xhr')
+        do_default = self.interp.evaljs(XHR_ONLOAD_JS, out=out, handle=handle)
+        self.tab.browser.measure.stop('script-xhr')
+
+
+    def XMLHttpRequest_send(self, method, url, body, is_async, handle):
         """
         implements XMLHttpRequest API.
         Used to make request to websites from a loaded page.
@@ -161,11 +196,56 @@ class JSContext:
         if not self.tab.allowed_request(full_url):
             raise Exception("Cross-Origin XHR blocked by CSP !")
 
-        headers, out = full_url.request(self.tab.url, body)
-
         # compare origins to prevent accessing 
         # other websites to steal info
         if full_url.origin() != self.tab.url.origin():
             raise Exception("Cross-Origin XHR request is not allowed !")
+        
+        def run_load():
+            headers, response = full_url.request(self.tab.url, body)
+            task = Task(self.dispatch_xhr_onload, response, handle)
+            self.tab.task_runner.schedule_task(task)
 
-        return out
+            if not is_async:
+                return response
+
+        if not is_async:
+            return run_load()
+        
+        else:
+            threading.Thread(target=run_load).start()
+    
+
+    def dispatch_settimeout(self, handle):
+        """
+        dispatches an event from browser to js runtime
+        """
+
+        if self.discarded: return
+
+        self.tab.browser.measure.time('script-settimeout')
+        self.interp.evaljs(SETTIMEOUT_JS, handle=handle)
+        self.tab.browser.measure.stop('script-settimeout')
+
+
+    def setTimeout(self, handle, time):
+        """
+        browser side implementation of setTimeout JS API
+        """
+
+        def run_callback():
+
+            task = Task(self.dispatch_settimeout, handle)
+            self.tab.task_runner.schedule_task(task)
+        
+        # thread waits for specified timing and 
+        # then schedules dispatch task
+        threading.Timer(time / 1000.0, run_callback).start()
+
+
+    def requestAnimationFrame(self):
+        """
+        browser side implementation of rAF JS API
+        """
+
+        self.tab.browser.set_needs_animation_frame(self.tab)

@@ -2,6 +2,7 @@ import socket
 import urllib.parse
 import random
 import html
+import time
 
 
 ENTRIES = [
@@ -71,6 +72,10 @@ def do_request(session, method, url, headers, body):
     elif method == "GET" and url == "/comment.js":
         with open("comment.js") as f:
             return "200 OK", f.read()
+    
+    elif method == "GET" and url == "/eventloop.js":
+        with open("eventloop.js") as f:
+            return "200 OK", f.read()
 
     elif method == "GET" and url == "/comment.css":
         with open("../browser.css") as f:
@@ -84,12 +89,35 @@ def do_request(session, method, url, headers, body):
     elif method == "GET" and url == "/login":
         return "200 OK", login_form(session)
     
+    elif method == "GET" and url == "/xhr":
+        return "200 OK", show_xhr()
+    
     elif method == "POST" and url == "/":
         params = form_decode(body)
         return do_login(session, params)
     
+    elif method == "GET" and url == "/count":
+        return "200 OK", show_count()
+    
     else:
         return "404 Not Found", not_found(url, method)
+    
+
+def show_xhr():
+    time.sleep(5)
+    return "Slow XMLHttpRequest response!"
+    
+
+def show_count():
+
+    out = "<!doctype html>"
+    out += "<div>"
+    out += "  Let's count up to 99!"
+    out += "</div>"
+    out += "<div>Output</div>"
+    out += "<div>XHR</div>"
+    out += "<script src=/eventloop.js></script>"
+    return out
 
 
 def form_decode(body):

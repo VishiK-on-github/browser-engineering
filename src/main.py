@@ -13,5 +13,5 @@ if __name__ == "__main__":
     url_str = sys.argv[1]
     url = URL(url_str)
     browser.new_tab(url)
-
+    browser.raster_and_draw()
     mainloop(browser)
