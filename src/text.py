@@ -5,6 +5,7 @@ class Text:
         self.parent = parent
         self.style = {}
         self.is_focused = False
+        self.animations = {}
 
 
     def __repr__(self):

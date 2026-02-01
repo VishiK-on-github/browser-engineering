@@ -120,3 +120,13 @@ def linespace(font):
 
     metrics = font.getMetrics()
     return metrics.fDescent - metrics.fAscent
+
+
+def add_parent_pointers(nodes, parent=None):
+    """
+    creates link from child nodes to parent
+    """
+
+    for node in nodes:
+        node.parent = parent
+        add_parent_pointers(node.children, node)

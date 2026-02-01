@@ -6,6 +6,7 @@ class Element:
         self.attributes = attributes
         self.style = {}
         self.is_focused = False
+        self.animations = {}
 
 
     def __repr__(self):

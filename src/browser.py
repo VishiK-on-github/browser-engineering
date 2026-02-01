@@ -3,12 +3,14 @@ import sys
 import threading
 import urllib
 import math
+from typing import List
 
 import sdl2
 import skia
+import OpenGL.GL
 
-from helpers import get_font, linespace, paint_tree, tree_to_list
-from draw import DrawText, DrawOutline, DrawLine
+from helpers import get_font, linespace, paint_tree, tree_to_list, add_parent_pointers
+from draw import DrawText, DrawLine
 from client import URL
 from task import Task, TaskRunner
 from document_layout import DocumentLayout
@@ -19,6 +21,8 @@ from text import Text
 from js_context import JSContext
 from profiler import MeasureTime
 from commit import CommitData
+from compositing import CompositedLayer, PaintCommand, DrawCompositedLayer, absolute_bounds_for_obj, DrawOutline, local_to_absolute
+from blend import Blend
 
 
 WIDTH = 800
@@ -37,22 +41,52 @@ class Browser:
     
         # creating SDL window
         self.sdl_window = \
-            sdl2.SDL_CreateWindow(b"Browser", sdl2.SDL_WINDOWPOS_CENTERED, 
-                                  sdl2.SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, 
-                                  sdl2.SDL_WINDOW_SHOWN)
+            sdl2.SDL_CreateWindow(b"Browser", 
+                                  sdl2.SDL_WINDOWPOS_CENTERED, 
+                                  sdl2.SDL_WINDOWPOS_CENTERED, 
+                                  WIDTH, HEIGHT, 
+                                  sdl2.SDL_WINDOW_SHOWN | sdl2.SDL_WINDOW_OPENGL)
+
+        # setting up OpenGL attributes in SDL
+        sdl2.SDL_GL_SetAttribute(sdl2.SDL_GL_CONTEXT_MAJOR_VERSION, 3)
+        sdl2.SDL_GL_SetAttribute(sdl2.SDL_GL_CONTEXT_MINOR_VERSION, 2)
+        sdl2.SDL_GL_SetAttribute(sdl2.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG, True)
+        sdl2.SDL_GL_SetAttribute(sdl2.SDL_GL_CONTEXT_PROFILE_MASK,
+                                 sdl2.SDL_GL_CONTEXT_PROFILE_CORE)
         
-        # creates skia surface
-        # effectively a chunk of memory which stores pixel values
-        # ct -> color type uses 8 bits for rgb and alpha
-        # skia actually uses 32 bit int to represent rgba
-        # this is a CPU-backed surface
-        self.root_surface = \
-            skia.Surface.MakeRaster(skia.ImageInfo.Make(WIDTH, HEIGHT, 
-                                                        ct=skia.kRGBA_8888_ColorType, 
-                                                        at=skia.kUnpremul_AlphaType))
+        """
+        Initializes the GPU rendering pipeline. 
+
+        Creates an SDL OpenGL context, binds it to a Skia DirectContext for hardware 
+        acceleration, and establishes the root rendering surface mapped to the 
+        window's default framebuffer.
+        """
+
+        # context is created for external processors (GPU) to keep track of state
+        self.gl_context = sdl2.SDL_GL_CreateContext(self.sdl_window)
+
+        print(f"OpenGL initialized: vendor={OpenGL.GL.glGetString(OpenGL.GL.GL_VENDOR)}, renderer={OpenGL.GL.glGetString(OpenGL.GL.GL_RENDERER)}")
+
+        # translate commands between skia and OpenGL, GPU understands OpenGL
+        self.skia_context = skia.GrDirectContext.MakeGL()
+
+        # create a skia root surface
+        self.root_surface = skia.Surface.MakeFromBackendRenderTarget(
+            self.skia_context,
+            skia.GrBackendRenderTarget(WIDTH, HEIGHT, 0, 0,
+                skia.GrGLFramebufferInfo(0, OpenGL.GL.GL_RGBA8)),
+                skia.kBottomLeft_GrSurfaceOrigin,
+                skia.kRGBA_8888_ColorType,
+                skia.ColorSpace.MakeSRGB())
+        
+        assert self.root_surface is not None
         
         # creates a surface for common components, address bar, tabs, back button
-        self.chrome_surface = skia.Surface(WIDTH, math.ceil(self.chrome.bottom))
+        self.chrome_surface = skia.Surface.MakeRenderTarget(
+                self.skia_context, skia.Budgeted.kNo,
+                skia.ImageInfo.MakeN32Premul(WIDTH, math.ceil(self.chrome.bottom)))
+        
+        assert self.chrome_surface is not None
 
         # will eventual store surface for the actual website content
         self.tab_surface = None
@@ -87,6 +121,12 @@ class Browser:
         self.needs_raster_and_draw = False
         self.needs_animation_frame = False
         self.active_tab_display_list = None
+        self.composited_layers = []
+        self.draw_list = []
+        self.composited_updates = {}
+        self.needs_composite = False
+        self.needs_raster = False
+        self.needs_draw = False
 
 
     def commit(self, tab, data):
@@ -110,10 +150,15 @@ class Browser:
             if data.display_list:
                 self.active_tab_display_list = data.display_list
 
-            # after commit data has been finalized we want to 
-            # raster and draw the committed components to the window
             self.animation_timer = None
-            self.set_needs_raster_and_draw()
+            self.composited_updates = data.composited_updates
+
+            if self.composited_updates == None:
+                self.composited_updates = {}
+                self.set_needs_composite()
+
+            else:
+                self.set_needs_draw()
 
         self.lock.release()
 
@@ -141,7 +186,7 @@ class Browser:
             return
 
         self.active_tab_scroll = self.clamp_scroll(self.active_tab_scroll + SCROLL_STEP)
-        self.set_needs_raster_and_draw()
+        self.set_needs_draw()
         self.needs_animation_frame = True
         self.lock.release()
 
@@ -178,18 +223,14 @@ class Browser:
             # use chrome class click event
             self.chrome.click(e.x, e.y)
 
-            self.set_needs_raster_and_draw()
+            self.set_needs_raster()
 
         else:
             # check and set focus to website content
             if self.focus != "content":
-                self.focus = "content"
+                self.set_needs_raster()
 
-                # unfocus from address bar
-                self.chrome.focus = None
-
-                self.set_needs_raster_and_draw()
-            
+            self.focus = "content"
             self.chrome.blur()
             tab_y = e.y - self.chrome.bottom
             task = Task(self.active_tab.click, e.x, tab_y)
@@ -211,7 +252,7 @@ class Browser:
         # if focus on chrome propagate event to chrome 
         # classes keypress and render chrome section
         if self.chrome.keypress(char):
-            self.set_needs_raster_and_draw()
+            self.set_needs_raster()
 
         # if focus on website content propagate event to 
         # chrome classes keypress and render chrome section
@@ -230,7 +271,7 @@ class Browser:
         self.lock.acquire(blocking=True)
 
         if self.chrome.enter():
-            self.set_needs_raster_and_draw()
+            self.set_needs_raster()
 
         self.lock.release()
 
@@ -250,19 +291,9 @@ class Browser:
         compute which skia draw objects must be 
         drawn to the tab surface
         """
-
-        if self.active_tab_height == None:
-            return
-
-        # allocate new surface for tab
-        if not self.tab_surface or self.active_tab_height != self.tab_surface.height():
-            self.tab_surface = skia.Surface(WIDTH, self.active_tab_height)
-
-        canvas = self.tab_surface.getCanvas()
-        canvas.clear(skia.ColorWHITE)
-
-        for cmd in self.active_tab_display_list:
-            cmd.execute(canvas)
+        
+        for composited_layer in self.composited_layers:
+            composited_layer.raster()
 
 
     def schedule_animation_frame(self):
@@ -338,23 +369,85 @@ class Browser:
         self.needs_raster_and_draw = True
 
 
-    def raster_and_draw(self):
+    def get_latest(self, effect):
+        """
+        get latest version of an effect
+        """
+
+        node = effect.node
+
+        if node not in self.composited_updates:
+            return effect
+        
+        if not isinstance(effect, Blend):
+            return effect
+        
+        return self.composited_updates[node]
+
+
+    def set_needs_raster(self):
+        """
+        setting flags when browser needs to raster
+        """
+
+        self.needs_raster = True
+        self.needs_draw = True
+
+
+    def set_needs_composite(self):
+        """
+        setting flags when browser needs to composite
+        """
+
+        self.needs_composite = True
+        self.needs_raster = True
+        self.needs_draw = True
+
+
+    def set_needs_draw(self):
+        """
+        setting flags when browser needs to draw
+        """
+
+        self.needs_draw = True
+
+
+    def composite_raster_and_draw(self):
         """
         computes display list items for chrome 
         and tab and renders them to the screen
         """
 
         self.lock.acquire(blocking=True)
-        if not self.needs_raster_and_draw: 
+        if not self.needs_composite \
+            and not self.needs_raster \
+            and not self.needs_draw:
             self.lock.release()
             return
 
-        self.measure.time('raster/draw')
-        self.raster_chrome()
-        self.raster_tab()
-        self.draw()
-        self.measure.stop('raster/draw')
-        self.needs_raster_and_draw = False
+        self.measure.time('composite_raster_and_draw')
+
+        if self.needs_composite:
+            self.measure.time('composite')
+            self.composite()
+            self.measure.stop('composite')
+
+        if self.needs_raster:
+            self.measure.time('raster')
+            self.raster_chrome()
+            self.raster_tab()
+            self.measure.stop('raster')
+
+        if self.needs_draw:
+            self.measure.time('draw')
+            self.paint_draw_list()
+            self.draw()
+            self.measure.stop('draw')
+
+        self.measure.stop('composite_raster_and_draw')
+        self.needs_composite = False
+        self.needs_raster = False
+        self.needs_draw = False
         self.lock.release()
 
 
@@ -366,21 +459,14 @@ class Browser:
         canvas = self.root_surface.getCanvas()
         canvas.clear(skia.ColorWHITE)
 
-        tab_rect = skia.Rect.MakeLTRB(0, self.chrome.bottom, WIDTH, HEIGHT)
-        tab_offset = self.chrome.bottom - self.active_tab.scroll
-
         canvas.save()
 
-        # restrict tabs contents drawing to only tab_rects dimensions
-        # any out of bounds should not be on sdl window. this action
-        # affects all commands which run between and restore command
-        canvas.clipRect(tab_rect)
+        canvas.translate(0, self.chrome.bottom - self.active_tab_scroll)
 
-        # move origin from (0, tab_offset)
-        canvas.translate(0, tab_offset)
-        self.tab_surface.draw(canvas, 0, 0)
+        # draw items to the root surface
+        for item in self.draw_list:
+            item.execute(canvas)
 
-        # revert the clipRect & translate operation
         canvas.restore()
 
         chrome_rect = skia.Rect.MakeLTRB(0, 0, WIDTH, self.chrome.bottom)
@@ -393,32 +479,116 @@ class Browser:
         # undo clipRect
         canvas.restore()
 
-        # make the root surface to an image
-        skai_img = self.root_surface.makeImageSnapshot()
+        # flushing the skia surface
+        self.root_surface.flushAndSubmit()
 
-        # convert img -> bytes
-        skia_bytes = skai_img.tobytes()
+        # activate the latest frame buffer
+        sdl2.SDL_GL_SwapWindow(self.sdl_window)
 
-        # bits per pixel
-        depth = 32
 
-        # bytes per row
-        pitch = 4 * WIDTH
+    def paint_draw_list(self):
+        """
+        using list of composited layers to 
+        create hierarchy of visual effects
+        """
 
-        # wrap data in SDL surface without copying bytes
-        sdl_surface = sdl2.SDL_CreateRGBSurfaceFrom(skia_bytes, WIDTH, 
-                                                    HEIGHT, depth, pitch, 
-                                                    self.RED_MASK, self.GREEN_MASK, 
-                                                    self.BLUE_MASK, self.ALPHA_MASK)
+        new_effects = {}
+        self.draw_list = []
+
+        # iterate over all the composited layers
+        for composited_layer in self.composited_layers:
+            current_effect = DrawCompositedLayer(composited_layer)
+
+            # if the composited layer has no items skip
+            if not composited_layer.display_items: continue
+
+            parent = composited_layer.display_items[0].parent
+
+            while parent:
+                
+                # get the latest visual effect associated with the parent
+                new_parent = self.get_latest(parent)
+
+                if new_parent in new_effects:
+                    new_effects[new_parent].children.append(current_effect)
+                    break
+                
+                else:
+                    current_effect = new_parent.clone(current_effect)
+                    new_effects[new_parent] = current_effect
+                    parent = new_parent.parent
+
+            if not parent:
+                self.draw_list.append(current_effect)
+
+
+    def clear_data(self):
+        """
+        discard & reset data
+        """
+
+        self.active_tab_scroll = 0
+        self.active_tab_url = None
+        self.display_list = []
+        self.composited_layers = []
+        self.composited_updates = {}
+
+
+    def composite(self):
+        """
+        This is used to determine how to group 
+        & cache paint commands onto a composited layer.
+        This would help us minimize raster commands since 
+        components where layout doesn't change can be combined into one layer
+        """
+
+        # add links from child node to parent. 
+        # I think this is used to determine if 
+        # composited layers have a common ancestor
+        add_parent_pointers(self.active_tab_display_list)
+        self.composited_layers: List[CompositedLayer] = []
+        all_commands = []
+
+        # get all the paint commands in the display list
+        for cmd in self.active_tab_display_list:
+            all_commands = tree_to_list(cmd, all_commands)
         
-        rect = sdl2.SDL_Rect(0, 0, WIDTH, HEIGHT)
-        window_surface = sdl2.SDL_GetWindowSurface(self.sdl_window)
+        non_composited_commands = \
+            [cmd for cmd in all_commands 
+             if isinstance(cmd, PaintCommand) or not cmd.needs_compositing
+             if not cmd.parent or cmd.parent.needs_compositing]
 
-        # we copy bytes from sdl_surface to window - Blit is copying
-        sdl2.SDL_BlitSurface(sdl_surface, rect, window_surface, rect)
+        for cmd in non_composited_commands:
+            did_break = False
 
-        # used to signify drawing is done and to show the result on SDL window
-        sdl2.SDL_UpdateWindowSurface(self.sdl_window)
+            # top to bottom checking
+            for layer in reversed(self.composited_layers):
+
+                # if a composited layer is compatible we 
+                # merge paint commands with it
+                if layer.can_merge(cmd):
+                    layer.add(cmd)
+                    did_break = True
+                    break
+                
+                # if it cannot be merged but layers bounds intersect 
+                # with the paint commands rect we create a new layer and dont check any further
+                elif skia.Rect.Intersects(layer.composited_bounds(), 
+                                          local_to_absolute(cmd, cmd.rect)):
+                    self.composited_layers.append(CompositedLayer(self.skia_context, cmd))
+                    did_break = True
+                    break
+            
+            # if there are no merges then we create a new top layer compos
+            if not did_break:
+                layer = CompositedLayer(self.skia_context, cmd)
+                self.composited_layers.append(layer)
+
+        # recompute the active tabs height due to composited layers
+        self.active_tab_height = 0
+        for layer in self.composited_layers:
+            self.active_tab_height = \
+                max(self.active_tab_height, layer.absolute_bounds().bottom())
 
 
     def new_tab(self, url):
@@ -437,8 +607,7 @@ class Browser:
         """
 
         self.active_tab = tab
-        self.active_tab_scroll = 0
-        self.active_tab_url = None
+        self.clear_data()
         self.needs_animation_frame = True
         self.animation_timer = None
 
@@ -463,6 +632,7 @@ class Browser:
         for tab in self.tabs:
             tab.task_runner.set_needs_quit()
 
+        sdl2.SDL_GL_DeleteContext(self.gl_context)
         sdl2.SDL_DestroyWindow(self.sdl_window)
 
 
@@ -672,6 +842,12 @@ class Tab:
         self.browser = browser
         self.js = None
         self.loaded = False
+        
+        self.needs_style = False
+        self.needs_layout = False
+        self.needs_paint = False
+
+        self.composited_updates = []
 
         # init task queue for tab
         self.task_runner = TaskRunner(self)
@@ -692,20 +868,45 @@ class Tab:
         self.js.interp.evaljs("__runRAFHandlers()")
         self.browser.measure.stop('script-runRAFHandlers')
 
+        for node in tree_to_list(self.nodes, []):
+            for (property_name, animation) in node.animations.items():
+                value = animation.animate()
+
+                # if we have a new value for the property update 
+                # the nodes property with new value
+                if value:
+                    node.style[property_name] = value
+                    self.composited_updates.append(node)
+                    self.set_needs_paint()
+
+        needs_composite = self.needs_style or self.needs_layout
+
         self.render()
 
         # update scroll if it has changed
         scroll = None
         if self.scroll_changed_in_tab:
             scroll = self.scroll
+
+        composited_updates = None
+
+        if not needs_composite:
+            composited_updates = {}
+
+            for node in self.composited_updates:
+                composited_updates[node] = node.blend_op
+
+        self.composited_updates = []
         
         document_height = math.ceil(self.document.height + 2 * VSTEP)
         commit_data = CommitData(self.url, scroll, 
-                                 document_height, self.display_list)
+                                 document_height, self.display_list,
+                                 composited_updates)
 
         self.display_list = None
-        self.browser.commit(self, commit_data)
         self.scroll_changed_in_tab = False
+
+        self.browser.commit(self, commit_data)
 
 
     def clamp_scroll(self, scroll):
@@ -748,9 +949,10 @@ class Tab:
         # making position relative to web page
         y += self.scroll
 
+        loc_rect = skia.Rect.MakeXYWH(x, y, 1, 1)
         objs = [obj for obj in tree_to_list(self.document, [])
-                if obj.x <= x <= obj.x + obj.width
-                and obj.y <= y <= obj.y + obj.height]
+                if absolute_bounds_for_obj(obj).intersects(
+                    loc_rect)]
         
         if not objs: return
         elt = objs[-1].node
@@ -842,7 +1044,25 @@ class Tab:
         update needs_render flag
         """
 
-        self.needs_render = True
+        self.needs_style = True
+        self.browser.set_needs_animation_frame(self)
+
+
+    def set_needs_layout(self):
+        """
+        setting flags when browser needs to update layout
+        """
+
+        self.needs_layout = True
+        self.browser.set_needs_animation_frame(self)
+
+
+    def set_needs_paint(self):
+        """
+        setting flags when browser needs to paint
+        """
+
+        self.needs_paint = True
         self.browser.set_needs_animation_frame(self)
 
 
@@ -857,7 +1077,9 @@ class Tab:
         self.task_runner.clear_pending_tasks()
 
         # download html file from the server
+        self.browser.measure.time('fetch_page')
         headers, body = url.request(self.url, payload)
+        self.browser.measure.stop('fetch_page')
 
         # set tab url and add url to tab history
         self.url = url
@@ -950,23 +1172,23 @@ class Tab:
         performs styling, layout, paint and draw phases
         """
 
-        if not self.needs_render: return
-
         self.browser.measure.time('render')
 
-        # apply styling info to all the nodes based on priority
-        style(self.nodes, sorted(self.rules, key=cascade_priority))
-        
-        # init and build a tree of block layout objects
-        self.document = DocumentLayout(self.nodes)
-        self.document.layout()
-        self.display_list = []
+        if self.needs_style:
+            style(self.nodes, sorted(self.rules, key=cascade_priority), self)
+            self.needs_layout = True
+            self.needs_style = False
 
-        # compute objects based on layout type
-        paint_tree(self.document, self.display_list)
+        if self.needs_layout:
+            self.document = DocumentLayout(self.nodes)
+            self.document.layout()
+            self.needs_paint = True
+            self.needs_layout = False
 
-        # reset needs_render flag
-        self.needs_render = False
+        if self.needs_paint:
+            self.display_list = []
+            paint_tree(self.document, self.display_list)
+            self.needs_paint = False
 
         clamped_scroll = self.clamp_scroll(self.scroll)
 
@@ -1037,5 +1259,5 @@ def mainloop(browser):
             elif event.type == sdl2.SDL_TEXTINPUT:
                 browser.handle_key(event.text.text.decode("utf8"))
 
-        browser.raster_and_draw()
+        browser.composite_raster_and_draw()
         browser.schedule_animation_frame()

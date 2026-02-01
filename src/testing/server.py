@@ -76,6 +76,10 @@ def do_request(session, method, url, headers, body):
     elif method == "GET" and url == "/eventloop.js":
         with open("eventloop.js") as f:
             return "200 OK", f.read()
+        
+    elif method == "GET" and url == "/fade.js":
+        with open("fade.js") as f:
+            return "200 OK", f.read()
 
     elif method == "GET" and url == "/comment.css":
         with open("../browser.css") as f:
@@ -99,6 +103,9 @@ def do_request(session, method, url, headers, body):
     elif method == "GET" and url == "/count":
         return "200 OK", show_count()
     
+    elif method == "GET" and url == "/fade":
+        return "200 OK", show_fade()
+    
     else:
         return "404 Not Found", not_found(url, method)
     
@@ -106,6 +113,14 @@ def do_request(session, method, url, headers, body):
 def show_xhr():
     time.sleep(5)
     return "Slow XMLHttpRequest response!"
+
+
+def show_fade():
+
+    out = "<!doctype html>"
+    out += "<div>This text fades</div>"
+    out += "<script src=/fade.js></script>"
+    return out
     
 
 def show_count():

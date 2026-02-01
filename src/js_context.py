@@ -46,6 +46,8 @@ class JSContext:
 
         self.interp.export_function("requestAnimationFrame", self.requestAnimationFrame)
 
+        self.interp.export_function("style_set", self.style_set)
+
         # start profiling js runtime eval
         self.tab.browser.measure.time('script-runtime')
 
@@ -249,3 +251,14 @@ class JSContext:
         """
 
         self.tab.browser.set_needs_animation_frame(self.tab)
+
+
+    def style_set(self, handle, s):
+        """
+        implements browser side method to 
+        update style for an element
+        """
+
+        elt = self.handle_to_node[handle]
+        elt.attributes["style"] = s;
+        self.tab.set_needs_render()

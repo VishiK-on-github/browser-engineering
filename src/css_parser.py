@@ -1,6 +1,7 @@
 from element import Element
 from tag_selector import TagSelector
 from descendent_selector import DescendantSelector
+from compositing import NumericAnimation
 
 
 INHERITED_PROPERTIES = {
@@ -9,6 +10,7 @@ INHERITED_PROPERTIES = {
     "font-weight": "normal",
     "color": "black",
 }
+REFRESH_RATE_SEC = 0.033
 
 
 class CSSParser:
@@ -32,10 +34,16 @@ class CSSParser:
         """
 
         start = self.i
+        in_quote = False
 
         while self.i < len(self.s):
 
-            if self.s[self.i].isalnum() or self.s[self.i] in "#-.%":
+            cur = self.s[self.i]
+
+            if cur == "'":
+                in_quote = not in_quote
+
+            if cur.isalnum() or cur in ",/#-.%()\"'" or (in_quote and cur == ":"):
                 self.i += 1
 
             else:
@@ -58,7 +66,7 @@ class CSSParser:
         self.i += 1
 
 
-    def pair(self):
+    def pair(self, until):
         """
         extract one property value pairs
         which describe styling info of elements
@@ -68,8 +76,8 @@ class CSSParser:
         self.whitespace()
         self.literal(":")
         self.whitespace()
-        val = self.word()
-        return prop.casefold(), val
+        val = self.until_chars(until)
+        return prop.casefold(), val.strip()
     
 
     def body(self):
@@ -81,7 +89,7 @@ class CSSParser:
         while self.i < len(self.s) and self.s[self.i] != "}":
 
             try:
-                prop, value = self.pair()
+                prop, value = self.pair([";", "}"])
                 pairs[prop] = value
                 self.whitespace()
                 self.literal(";")
@@ -160,13 +168,47 @@ class CSSParser:
                     break
 
         return rules
+    
+
+    def until_chars(self, chars):
+        """
+        gather string content
+        """
+
+        start = self.i
+
+        while self.i < len(self.s) and self.s[self.i] not in chars:
+            self.i += 1
+
+        return self.s[start:self.i]
+    
+
+def parse_transition(value):
+    """
+    parsing function in transform css property.
+    currently only supports translate.
+    ref: https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/transition
+    """
+
+    properties = {}
+    
+    if not value: return properties
+
+    for item in value.split(","):
+
+        property, duration = item.split(" ", 1)
+        frames = int(float(duration[:-1]) / REFRESH_RATE_SEC)
+        properties[property] = frames
+
+    return properties
 
 
-def style(node, rules):
+def style(node, rules, tab):
     """
     parses attributes of a node and add them as style property
     """
     
+    old_style = node.style
     node.style = {}
     
     # we apply the inherited properties
@@ -202,9 +244,20 @@ def style(node, rules):
         parent_px = float(parent_font_size[:-2])
         node.style["font-size"] = str(node_pct * parent_px) + "px"
 
+    # if we have an old style, check difference and re-render
+    if old_style:
+        transitions = diff_styles(old_style, node.style)
+
+        for property, (old_value, new_value, num_frames) in transitions.items():
+            if property == "opacity":
+                tab.set_needs_render()
+                animation = NumericAnimation(old_value, new_value, num_frames)
+                node.animations["property"] = animation
+                node.style[property] = animation.animate()
+
     # we recursively apply the styling info
     for child in node.children:
-        style(child, rules)
+        style(child, rules, tab)
 
 
 def cascade_priority(rule):
@@ -213,3 +266,26 @@ def cascade_priority(rule):
     """
     selector, _ = rule
     return selector.priority
+
+
+def diff_styles(old_style, new_style):
+    """
+    This method is used to check which css properties 
+    have been updated between two runs of style
+    """
+
+    transition = {}
+
+    for property, num_frames in parse_transition(new_style.get("transition")).items():
+        if property not in old_style: continue
+        if property not in new_style: continue
+
+        old_value = old_style[property]
+        new_value = new_style[property]
+
+        # checking if properties have changed
+        if old_value == new_value: continue
+
+        transition[property] = (old_value, new_value, num_frames)
+
+    return transition

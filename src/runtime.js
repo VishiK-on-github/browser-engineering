@@ -33,10 +33,18 @@ Node.prototype.addEventListener = function(type, listener) {
     list.push(listener);
 }
 
+// updating text inside HTML tags
 Object.defineProperty(Node.prototype, 'innerHTML', {
     set: function(s) {
         call_python("innerHTML_set", this.handle, s.toString());
     }
+});
+
+// updating style for a node
+Object.defineProperty(Node.prototype, 'style', {
+    set: function(s) {
+        call_python("style_set", this.handle, s.toString())
+    },
 });
 
 Node.prototype.dispatchEvent = function(evt) {

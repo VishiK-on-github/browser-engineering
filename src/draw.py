@@ -1,18 +1,18 @@
 import skia
 from helpers import parse_color
+from compositing import PaintCommand
 
 
-class DrawText:
+class DrawText(PaintCommand):
     def __init__(self, x1: int, y1: int,
                  text: str, font, color: str):
-
-        self.rect = skia.Rect.MakeLTRB(x1, y1, x1 + font.measureText(text),
-                                       y1 - font.getMetrics().fAscent + \
-                                        font.getMetrics().fDescent)
 
         self.text = text
         self.color = color
         self.font = font
+        super().__init__(skia.Rect.MakeLTRB(x1, y1,
+            x1 + font.measureText(text),
+            y1 - font.getMetrics().fAscent + font.getMetrics().fDescent))
 
 
     def execute(self, canvas):
@@ -33,9 +33,10 @@ class DrawText:
         return f"DrawText(text={self.text})"
 
 
-class DrawRect:
+class DrawRect(PaintCommand):
     def __init__(self, rect, color: str) -> None:
 
+        super().__init__(rect)
         self.rect = rect
         self.color = color
 
@@ -54,36 +55,11 @@ class DrawRect:
             bottom={self.rect.bottom()}, right={self.rect.right()}, color={self.color})"
 
 
-class DrawOutline:
-    def __init__(self, rect, color: str, thickness: int) -> None:
-
-        self.rect = rect
-        self.color = color
-        self.thickness = thickness
-
-    
-    def execute(self, canvas):
-        """
-        draw rectangle with borders on canvas
-        """
-
-        paint = skia.Paint(Color=parse_color(self.color),
-                           StrokeWidth=self.thickness,
-                           Style=skia.Paint.kStroke_Style)
-        
-        canvas.drawRect(self.rect, paint)
-        
-    
-    def __repr__(self):
-        return f"DrawOutline({self.rect.left}, {self.rect.top}, {self.rect.right}, \
-            {self.rect.bottom}, color={self.color}, thickness={self.thickness})"
-
-
-class DrawLine:
+class DrawLine(PaintCommand):
     def __init__(self, x1: int, y1: int, x2: int, y2: int,
                  color: str, thickness: int) -> None:
 
-        self.rect = skia.Rect.MakeLTRB(x1, y1, x2, y2)
+        super().__init__(skia.Rect.MakeLTRB(x1, y1, x2, y2))
         self.color = color
         self.thickness = thickness
 
@@ -110,13 +86,12 @@ class DrawLine:
             {self.rect.bottom()}, color={self.color}, thickness={self.thickness})"
     
 
-class DrawRRect:
+class DrawRRect(PaintCommand):
     def __init__(self, rect, radius: float, color: str):
     
-        self.rect = rect
+        super().__init__(rect)
         self.rrect = skia.RRect.MakeRectXY(rect, radius, radius)
         self.color = color
-        self.radius = radius
 
 
     def execute(self, canvas):
@@ -129,5 +104,4 @@ class DrawRRect:
 
     
     def __repr__(self):
-        return f"DrawRRect(top={self.rect.top()}, left={self.rect.left()}, \
-            bottom={self.rect.bottom()}, right={self.rect.right()}, color={self.color}), radius={self.radius}"
+        return f"DrawRRect(rect={str(self.rrect)}, color={self.color})"

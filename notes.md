@@ -39,6 +39,7 @@ When a website's JS script is downloaded and evaluated the execution flow genera
 4. The browser implementation schedules task in its task queue to make necessary changes (typically DOM changes) to redraw changes onto the browser window in response to JS invocation
 
 ### Threading Running
+
 1. The code running in the main thread requests an animation frame with set_needs_animation_frame, perhaps in response to an event handler or due to requestAnimationFrame.
 2. The browser thread event loop schedules an animation frame on the main thread TaskRunner.
 3. The main thread executes its part of rendering, then calls browser.commit.
@@ -66,3 +67,12 @@ You should schedule an animation frame when:
 - JavaScript requested it: The JS code specifically called requestAnimationFrame(). This sets the needs_animation_frame flag.
 - Ongoing Animations: If an animation is mid-way (like your counter), each frame should schedule the next one.
 - User input requires a JS response: If a user clicks a button that has a JS event listener, you might schedule a frame to handle the visual update resulting from that click.
+
+### Animation & Compositing (+GPU Based Rendering)
+- Upload the display list to specialized GPU memory.
+- Compile GPU programs that raster and draw the display list (one time operation, compiled program is cached. compilation to make them portable across variety of instruction sets & acceleration strats)
+- Raster every drawing command into GPU textures.
+- Draw the textures onto the screen.
+- Our objective compositing is to cache draw commands (which dont change) into a single layer so that it reduces layers which needs to be rastered onto the surface
+- Cool find: https://developer.chrome.com/docs/chromium/renderingng-data-structures#compositor-frames
+- Cool find: https://developer.chrome.com/docs/chromium/videong

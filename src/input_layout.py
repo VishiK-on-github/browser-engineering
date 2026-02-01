@@ -70,8 +70,7 @@ class InputLayout:
 
         if bg_color != "transparent":
             radius = float(self.node.style.get("border-radius", "0px")[:-2])
-            rrect = DrawRRect(self.self_rect(), radius, bg_color)
-            cmds.append(rrect)
+            cmds.append(DrawRRect(self.self_rect(), radius, bg_color))
 
         if self.node.tag == "input":
             text = self.node.attributes.get("value", "")

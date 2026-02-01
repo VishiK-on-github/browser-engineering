@@ -13,3 +13,5 @@ Noting some questions I have along the way:
 - It allows supports automatically stop screen refresh incase a tab is inactive
 6. In real world browsers how many types threads are used and for what purpose?
 - https://developer.chrome.com/docs/chromium/renderingng-architecture#process_and_thread_structure
+7. What are cons of using GPU based rendering?
+- Any of the four steps can make GPU raster and draw slow. Large display lists take a while to upload. Complex display list commands take longer to compile. Raster can be slow if there are many surfaces, and draw can be slow if surfaces are deeply nested. On a CPU, the upload step and compile steps aren’t necessary, and more memory is available for raster and draw. Of course, many optimizations are available for both GPUs and CPUs, so choosing the best way to raster and draw a given page can be quite complex.
