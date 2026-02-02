@@ -1,5 +1,6 @@
 import socket
 import ssl
+import os
 
 
 COOKIE_JAR = {}
@@ -9,7 +10,7 @@ class URL:
 
     def __init__(self, url):
         self.scheme, url = url.split("://", 1)
-        assert self.scheme in ["http", "https"]
+        assert self.scheme in ["http", "https", "file"]
 
         if "/" not in url:
             url = url + "/"
@@ -22,6 +23,8 @@ class URL:
             self.port = 80
         elif self.scheme == "https":
             self.port = 443
+        elif self.scheme == "file":
+            self.port = ""
 
         # custom port
         if ":" in self.host:
@@ -30,6 +33,15 @@ class URL:
 
 
     def request(self, referrer, payload=None):
+        """
+        make request to host and get response
+        """
+
+        # displaying file
+        if self.scheme == "file":
+            headers, file_body = self.request_file()
+
+            return headers, file_body
         
         # setting up connection to host
         s = socket.socket(
@@ -168,6 +180,9 @@ class URL:
         if self.scheme == "http" and self.port == 80:
             port_part = ""
 
+        if self.scheme == "file":
+            port_part = ""
+
         return self.scheme + "://" + self.host + port_part + self.path
     
 
@@ -177,3 +192,24 @@ class URL:
         """
 
         return self.scheme + "://" + self.host + ":" + str(self.port)
+    
+
+    def request_file(self):
+        """
+        handles request when content requested starts file:///.
+        currently only supports path relative to current working directory
+        """
+
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        file_path = dir_path + self.path
+        headers = dict()
+
+        try:
+            body = open(str(file_path)).read()
+
+        except Exception:
+            fail_path = dir_path + "/default/fail.html"
+            body = open(str(fail_path)).read()
+
+        return headers, body
+

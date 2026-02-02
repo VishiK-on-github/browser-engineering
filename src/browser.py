@@ -3,7 +3,6 @@ import sys
 import threading
 import urllib
 import math
-from typing import List
 
 import sdl2
 import skia
@@ -91,13 +90,13 @@ class Browser:
         # will eventual store surface for the actual website content
         self.tab_surface = None
 
-        self.tabs = []
-        self.active_tab: Tab = None
-        self.focus = None
-        self.address_bar = ""
+        self.tabs: list[Tab] = []
+        self.active_tab: Tab | None = None
+        self.focus: str | None = None
+        self.address_bar: str = ""
         self.lock = threading.Lock()
-        self.active_tab_url = None
-        self.active_tab_scroll = 0
+        self.active_tab_url: str | None = None
+        self.active_tab_scroll: int = 0
 
         # for profiling
         self.measure = MeasureTime()
@@ -117,16 +116,16 @@ class Browser:
             self.ALPHA_MASK = 0xff000000
 
         self.animation_timer = None
-        self.active_tab_height = 0
-        self.needs_raster_and_draw = False
-        self.needs_animation_frame = False
+        self.active_tab_height: float = 0
+        self.needs_raster_and_draw: bool = False
+        self.needs_animation_frame: bool = False
         self.active_tab_display_list = None
         self.composited_layers = []
-        self.draw_list = []
+        self.draw_list: list[DrawCompositedLayer] = []
         self.composited_updates = {}
-        self.needs_composite = False
-        self.needs_raster = False
-        self.needs_draw = False
+        self.needs_composite: bool = False
+        self.needs_raster: bool = False
+        self.needs_draw: bool = False
 
 
     def commit(self, tab, data):
@@ -835,17 +834,17 @@ class Tab:
         # tabs current url
         self.url = None
         self.scroll = 0
-        self.scroll_changed_in_tab = False
+        self.scroll_changed_in_tab: bool = False
         # used to determine if we need to run render
-        self.needs_render = False
-        self.needs_raf_callbacks = False
-        self.browser = browser
+        self.needs_render: bool = False
+        self.needs_raf_callbacks: bool = False
+        self.browser: Browser = browser
         self.js = None
         self.loaded = False
         
-        self.needs_style = False
-        self.needs_layout = False
-        self.needs_paint = False
+        self.needs_style: bool = False
+        self.needs_layout: bool = False
+        self.needs_paint: bool = False
 
         self.composited_updates = []
 

@@ -2,7 +2,7 @@
 
 Some issues and notes on how i fixed them
 
-1. Black screen due to issues in raster_tab method (maybe)
+1. Can't Recreate: Black screen due to issues in raster_tab method (maybe)
 2. Fixed: When we scroll down at the start it works correctly, once we reach the end of the screen and then scroll up & scroll down it jumps to the end of the screen. There is some piece of code which is not getting updated which leads to this jumping
 - Fix: My code to update scolling up used non threaded version, which did not update self.active_tab_scroll variable
 3. Fixed: Server code breaks when browser started for https://localhost:8000/count

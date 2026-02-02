@@ -10,7 +10,12 @@ if __name__ == "__main__":
     # SDL_INIT_EVENTS used for init event handling
     sdl2.SDL_Init(sdl2.SDL_INIT_EVENTS)
     browser = Browser()
-    url_str = sys.argv[1]
+
+    if len(sys.argv) < 2:
+        url_str = "file:///default/default.html"
+    else:
+        url_str = sys.argv[1]
+
     url = URL(url_str)
     browser.new_tab(url)
     browser.draw()
